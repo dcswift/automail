@@ -20,6 +20,7 @@ Arguments: (may be abbreviated as first letter)
    -send
    -check
    -remind
+   -debug (Prints send or remind messages but doesn't send. Specify *before* -send/-remind argument.)
 '''
 
 import sys,re,subprocess,time,datetime,copy
@@ -129,8 +130,10 @@ end tell
    return script
 
 def send(template,addressees,log):
+   global debug
    for addressee in addressees:
       msg=subwords(template,addressee)
+      if debug: print('Message:\n',msg)
       run_applescript_str(applescript_email(msg))
       logmsg(log,msg,addressee)
 
@@ -188,6 +191,7 @@ def check(log,savefolder):
    if change: tree.write(log)
 
 def remind(template,log):
+   global debug
    (tree,root)=readlogdata(log)
    change=False
    for logitem in root:
@@ -195,6 +199,7 @@ def remind(template,log):
          vars=copy.deepcopy(logitem.attrib)
          vars['subject']='Re: '+vars['subject']
          msg=subwords(template,vars)
+         if debug: print(msg)
          run_applescript_str(applescript_email(msg))
          remind=''
          if 'remind' in logitem.attrib: remind=logitem.attrib['remind']+','

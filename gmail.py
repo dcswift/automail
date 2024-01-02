@@ -24,6 +24,7 @@ Arguments: (may be abbreviated as first letter)
    -send
    -check
    -remind
+   -debug (Prints send or remind messages but doesn't send or log. Specify *before* -send/-remind argument.)
 '''
 
 import sys,re,subprocess,time,datetime,copy
@@ -130,9 +131,11 @@ def send_gmail(msg):
       return False
 
 def send(template,addressees,log):
+   global debug
    for addressee in addressees:
       msg=subwords(template,addressee)
-      if send_gmail(msg): logmsg(log,msg,addressee)
+      if debug: print(msg)
+      elif send_gmail(msg): logmsg(log,msg,addressee)
 
 def gmail_getreply(addr,subj,savefolder):
    global acct,password
@@ -198,6 +201,7 @@ def check(log,savefolder):
    if change: tree.write(log)
 
 def remind(template,log):
+   global debug
    (tree,root)=readlogdata(log)
    change=False
    for logitem in root:
@@ -205,7 +209,8 @@ def remind(template,log):
          vars=copy.deepcopy(logitem.attrib)
          vars['subject']='Re: '+vars['subject']
          msg=subwords(template,vars)
-         if send_gmail(msg):
+         if debug: print(msg)
+         elif send_gmail(msg):
             remind=''
             if 'remind' in logitem.attrib: remind=logitem.attrib['remind']+','
             remind+=logtime()
