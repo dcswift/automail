@@ -6,14 +6,30 @@ Manage form emails by controlling MS Outlook using AppleScript on Mac OSX.
   with addressee-specific material.
   Addressees are defined in an XML file.
   Addressee-specific parameters are attributes under each entry.
-  Attribute names are referred to in the template in uppercase with a leading $,
+  Attribute names are referred to in the template as an uppercase keyword with a leading $,
   e.g. $FIRSTNAME for attribute "firstname".
   Sent messages are logged to another XML file.
 - Checks for replies, logging the reply date and moving the reply to a chosen folder.
 - Send a reminder for any message with no reply logged, using a reminder template.
 
+Multiple files may be specified for the addressees and the email template.
+The lists and template contents are concatenated.
+
+The email template must have:
+- A line starting with 'To: ' followed by the attribute name for the email address.
+- A line starting with 'Subject: ' followed by the subject, which can contain addressee-specific keywords.
+- 'Body:' on a line by itself, followed by the body of the email (containing keywords) on subsequent lines.
+
+Additional text files can be inserted in the body of the email template.
+If a line starts with '++', the rest of the line is interpreted as a filename
+e.g. "++signature.txt". 
+Substitution is recursive: inserted files are processed for '++' commands too.
+The script checks for insertion *after* replacing keyword fields,
+so any filenames in the template may themselves be set to addressee-specific values by using keywords.
+
 Arguments: (may be abbreviated as first letter)
    -template TEMPLATE_FILE (needed for send and remind only)
+   -html (format email body as HTML, which seems necessary to preserve line breaks with Outlook)
    -addressees XML_FILE (needed for send only)
    -folder MAIL_FOLDER (default: automail)
    -log LOGFILE (default: log.xml)
@@ -44,13 +60,25 @@ def subwords1(text,vars): # replace text words if in dict
       text1+=line1+'\n'
    return text1
 
+def expandfile(file):
+   text=''
+   with open(file,'r') as fp:
+      for line in fp:
+         if line.startswith('++'): text+=expandfile(line[2:])
+         else: text+=line
+   return text
+
 def subwords(text,vars):
    text1=text
    for var in vars.keys():
       var1=r'\$'+var.upper() # keyword is $ plus varname in uppercase
       val=vars[var]
       text1=re.sub(var1,val,text1)
-   return text1
+   text2=''
+   for line in text1.splitlines():
+      if line.startswith('++'):text2+=expandfile(line[2:])
+      else: text2+=line+'\n'
+   return text2
 
 def readfile(file):
    with open(file,'r') as fp: return fp.read()
@@ -115,9 +143,11 @@ def getbody(text):
    return body
 
 def applescript_email(msg):
+   global html
    addr=getaddress(msg)
    subj=getsubject(msg)
    body=getbody(msg)
+   if html: body='<body>'+body.replace('\n','<br>\n')+'</body>'
    script = f'''
 tell application "Microsoft Outlook"
     set newMessage to make new outgoing message with properties {{subject:"{subj}", content:"{body}"}}
@@ -184,9 +214,13 @@ def check(log,savefolder):
          addr=msg.attrib['address']
          subj=msg.attrib['subject']
          reply=run_applescript_str(applescript_getreply(addr,subj,savefolder))
-         if reply!='':
+         reply1=''
+         for line in reply.splitlines():
+            if line.startswith('Error processing'): print(line)
+            else: reply1+=line+'\n'
+         if reply1!='':
+            print('Reply:'); print(reply) # complete with error messages
             msg.set('reply',logtime())
-            print(reply)
             change=True
    if change: tree.write(log)
 
@@ -199,7 +233,7 @@ def remind(template,log):
          vars=copy.deepcopy(logitem.attrib)
          vars['subject']='Re: '+vars['subject']
          msg=subwords(template,vars)
-         if debug: print(msg)
+         if debug: print('Message:\n',msg)
          run_applescript_str(applescript_email(msg))
          remind=''
          if 'remind' in logitem.attrib: remind=logitem.attrib['remind']+','
@@ -228,10 +262,11 @@ if __name__=='__main__':
    addressees=[]
    log='log.xml'
    mailfolder='automail'
-   debug=False
+   html=debug=False
    args=iter(sys.argv[1:])
    for arg in args:
       if arg=='-template' or arg=='-t': template+=readfile(next(args)) # appends
+      elif arg=='-html' or arg=='-h': html=True
       elif arg=='-addressees' or arg=='-a': addressees+=parse_xml(next(args))
       elif arg=='-log' or arg=='-l': log=next(args)
       elif arg=='-send' or arg=='-s': send(template,addressees,log)

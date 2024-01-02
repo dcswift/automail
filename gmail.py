@@ -6,11 +6,27 @@ Manage form emails by controlling gmail via SMTP and IMAP.
   with addressee-specific material.
   Addressees are defined in an XML file.
   Addressee-specific parameters are attributes under each entry.
-  Attribute names are referred to in the template in uppercase with a leading $,
+  Attribute names are referred to in the template as an uppercase keyword with a leading $,
   e.g. $FIRSTNAME for attribute "firstname".
   Sent messages are logged to another XML file.
 - Checks for replies, logging the reply date and moving the reply to a chosen folder.
 - Send a reminder for any message with no reply logged, using a reminder template.
+
+Multiple files may be specified for the addressees and the email template.
+The lists and template contents are concatenated.
+
+The email template must have:
+- A line starting with 'To: ' followed by the attribute name for the email address.
+- A line starting with 'Subject: ' followed by the subject, which can contain ad
+dressee-specific keywords.
+- 'Body:' on a line by itself, followed by the body of the email (containing keywords) on subsequent lines.
+
+Additional text files can be inserted in the body of the email template.
+If a line starts with '++', the rest of the line is interpreted as a filename
+e.g. "++signature.txt".
+Substitution is recursive: inserted files are processed for '++' commands too.
+The script checks for insertion *after* replacing keyword fields,
+so any filenames in the template may themselves be set to addressee-specific values by using keywords.
 
 Arguments: (may be abbreviated as first letter)
    -template TEMPLATE_FILE (needed for send and remind only)
@@ -36,13 +52,25 @@ from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
 import xml.etree.ElementTree as ET
 
+def expandfile(file):
+   text=''
+   with open(file,'r') as fp:
+      for line in fp:
+         if line.startswith('++'): text+=expandfile(line[2:])
+         else: text+=line
+   return text
+
 def subwords(text,vars):
    text1=text
    for var in vars.keys():
       var1=r'\$'+var.upper() # keyword is $ plus varname in uppercase
       val=vars[var]
       text1=re.sub(var1,val,text1)
-   return text1
+   text2=''
+   for line in text1.splitlines():
+      if line.startswith('++'):text2+=expandfile(line[2:])
+      else: text2+=line+'\n'
+   return text2
 
 def readfile(file):
    with open(file,'r') as fp: return fp.read()
