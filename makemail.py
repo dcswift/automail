@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 
+'''
+Construct email task from list of people
+
+Arguments: (may be abbreviated as first letter)
+   -list XMLFILE : list of names and other attributes as needed
+   -directory XMLFILE : directory of email addresses
+   -attribute NAME VALUE : to choose subset of names based on attributes
+   -parameter NAME VALUE : to set additional attributes as needed by email template
+   -outfile XMLFILE : otherwise writes to stdout
+'''
+
 import sys
 import xml.etree.ElementTree as ET
 
@@ -12,16 +23,14 @@ def parse_xml(filename):
    for child in read_xml(filename): data+=[child.attrib] # converts to dict
    return data
 
-def save_xml_file(tree, filename): tree.write(filename)
-
 args=iter(sys.argv[1:])
-addr=[]; type={}; param={}; dir=[]; outfile=''
+addr=[]; attr={}; param={}; dir=[]; outfile=''
 for arg in args:
-   if arg=='-addressees' or arg=='-a': addr+=parse_xml(next(args))
+   if arg=='-list' or arg=='-l': addr+=parse_xml(next(args))
    elif arg=='-directory' or arg=='-d': dir+=parse_xml(next(args))
-   elif arg=='-type' or arg=='-t':
-      ti=next(args); tt=next(args)
-      type[ti]=tt # if use next(args) directly, gives wrong order
+   elif arg=='-attribute' or arg=='-a':
+      ai=next(args); at=next(args)
+      attr[ai]=at # if use next(args) directly, gives wrong order
    elif arg=='-parameter' or arg=='-p':
       pi=next(args); pt=next(args)
       param[pi]=pt
@@ -34,8 +43,8 @@ root = ET.Element("mail"); root.tail='\n'
 tree = ET.ElementTree(root)
 for addri in addr:
    process=True
-   for typei in type.keys():
-      if addri[typei]!=type[typei]: process=False
+   for attri in attr.keys():
+      if addri[attri]!=attr[attri]: process=False
    if process:
       newel = ET.Element("rcpt"); newel.tail='\n'
       newel.attrib.update(addri)
