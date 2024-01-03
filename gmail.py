@@ -29,19 +29,20 @@ Substitution is recursive: inserted files are processed for '++' commands too.
 The script checks for insertion *after* replacing keyword fields,
 so any filenames in the template may themselves be set to addressee-specific values by using keywords.
 
-Arguments: (may be abbreviated as first letter)
-   -template TEMPLATE_FILE (needed for send and remind only)
-   -addressees XML_FILE (needed for send only)
-   -folder MAIL_FOLDER (default: automail)
-   -log LOGFILE (default: log.xml)
-   -username GMAIL_USER
+Arguments:
+   -template/-t TEMPLATE_FILE (needed for send and remind only)
+   -addressees/-a XML_FILE (needed for send only)
+   -folder/-f MAIL_FOLDER (default: automail)
+   -log/-l LOGFILE (default: log.xml)
+   -username/-u GMAIL_USER
    -account GMAIL_ACCOUNT
-   -password GMAIL_PASSWORD
+   -password/-p GMAIL_PASSWORD
    -passvar GMAIL_PASSWORD_ENVIRONMENT_VARIABLE
-   -send
-   -check
-   -remind
-   -debug (Prints send or remind messages but doesn't send or log. Specify *before* -send/-remind argument.)
+   -send/-s
+   -check/-c (checks for replies)
+   -recheck (checks even if a reply has already been received)
+   -remind/-r
+   -debug/-d (Prints send or remind messages but doesn't send or log. Specify *before* -send/-remind argument.)
 '''
 
 import sys,re,subprocess,time,datetime,copy
@@ -216,11 +217,11 @@ def gmail_getreply(addr,subj,savefolder):
    print(reply)
    return reply
 
-def check(log,savefolder):
+def check(log,savefolder,all=False):
    (tree,root)=readlogdata(log)
    change=False
    for msg in root:
-      if msg.attrib['reply']=='':
+      if all or msg.attrib['reply']=='':
          addr=msg.attrib['address']
          subj=msg.attrib['subject']
          reply=gmail_getreply(addr,subj,savefolder)
@@ -266,6 +267,7 @@ if __name__=='__main__':
       elif arg=='-send' or arg=='-s': send(template,addressees,log)
       elif arg=='-folder' or arg=='-f': mailfolder=next(args)
       elif arg=='-check' or arg=='-c': check(log,mailfolder)
+      elif arg=='-recheck': check(log,mailfolder,all=True)
       elif arg=='-remind' or arg=='-r': remind(template,log)
       elif arg=='-debug' or arg=='-d': debug=True
       else: raise ValueError(f'Argument {arg} not recognized!')
