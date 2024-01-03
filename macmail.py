@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
 '''
-Manage form emails by controlling gmail via SMTP and IMAP.
-Access via app password, not OAuth API.
+Manage form emails by controlling Mac Mail using AppleScript.
 - Sends emails to a list of addressees, filling out a template message
   with addressee-specific material.
   Addressees are defined in an XML file.
@@ -18,40 +17,49 @@ The lists and template contents are concatenated.
 
 The email template must have:
 - A line starting with 'To: ' followed by the attribute name for the email address.
-- A line starting with 'Subject: ' followed by the subject, which can contain ad
-dressee-specific keywords.
+- A line starting with 'Subject: ' followed by the subject, which can contain addressee-specific keywords.
 - 'Body:' on a line by itself, followed by the body of the email (containing keywords) on subsequent lines.
 
 Additional text files can be inserted in the body of the email template.
 If a line starts with '++', the rest of the line is interpreted as a filename
-e.g. "++signature.txt".
+e.g. "++signature.txt". 
 Substitution is recursive: inserted files are processed for '++' commands too.
 The script checks for insertion *after* replacing keyword fields,
 so any filenames in the template may themselves be set to addressee-specific values by using keywords.
 
 Arguments: (may be abbreviated as first letter)
    -template TEMPLATE_FILE (needed for send and remind only)
+   -html (format email body as HTML)
    -addressees XML_FILE (needed for send only)
    -folder MAIL_FOLDER (default: automail)
    -log LOGFILE (default: log.xml)
-   -username GMAIL_USER
-   -account GMAIL_ACCOUNT
-   -password GMAIL_PASSWORD
-   -passvar GMAIL_PASSWORD_ENVIRONMENT_VARIABLE
+   -account ACCOUNT
    -send
    -check
    -remind
-   -debug (Prints send or remind messages but doesn't send or log. Specify *before* -send/-remind argument.)
+   -debug (Prints send or remind messages but doesn't send. Specify *before* -send/-remind argument.)
 '''
 
 import sys,re,subprocess,time,datetime,copy
-import os,smtplib
-import imaplib
-import email
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import decode_header
 import xml.etree.ElementTree as ET
+
+def subwords0(text, vars): # replace text words if in dict
+   words = text.split()
+   words1 = [vars[word] if word in vars else word for word in words]
+   return ' '.join(words1)
+
+def subwords1(text,vars): # replace text words if in dict
+   lines = text.splitlines()
+   text1 = ''
+   for line in lines:
+      words = line.split()
+      words1 = []
+      for word in words:
+         if word.isupper(): words1+=[vars.get(word.lower(),word)]
+         else: words1+=[word]
+      line1 = ' '.join(words1)
+      text1+=line1+'\n'
+   return text1
 
 def expandfile(file):
    text=''
@@ -135,86 +143,64 @@ def getbody(text):
       elif line.startswith('Body:'): bodymode=True
    return body
 
-def send_gmail(msg):
-   global user,acct,password
+def applescript_email(msg):
+   global html
    addr=getaddress(msg)
    subj=getsubject(msg)
    body=getbody(msg)
-
-   fromaddr=acct+'@gmail.com'
-   gmsg = MIMEMultipart()
-   gmsg['From'] = f'{user} <{fromaddr}>'
-   gmsg['To'] = addr
-   gmsg['Subject'] = subj
-   gmsg.attach(MIMEText(body, 'plain'))
-
-   try:
-      server = smtplib.SMTP('smtp.gmail.com', 587)
-      server.starttls()
-      server.login(acct,password)
-      server.sendmail(fromaddr, addr, gmsg.as_string())
-      server.quit()
-      return True
-   except Exception as e:
-      print("Error: ", e)
-      return False
+   if html: body='<body>'+body.replace('\n','<br>\n')+'</body>'
+   script = f'''
+tell application "Mail"
+    set newMessage to make new outgoing message with properties {subject:"{subject}", content:"{body}", visible:true}
+    tell newMessage
+        set visible to true
+        make new to recipient at end of to recipients with properties {address:"{addr}"}
+        send
+    end tell
+end tell
+'''
+   return script
 
 def send(template,addressees,log):
    global debug
    for addressee in addressees:
       msg=subwords(template,addressee)
-      if debug: print(msg)
-      elif send_gmail(msg): logmsg(log,msg,addressee)
+      if debug: print('Message:\n',msg)
+      run_applescript_str(applescript_email(msg))
+      logmsg(log,msg,addressee)
 
-def gmail_getreply(addr,subj,savefolder):
-   global acct,password
+def applescript_getreply(addr,subj,savefolder):
+   global acct
+   applescript = f'''
+tell application "Mail"
+    set theSubject to "{subj}"
+    set theSender to "{addr}"
+    set theInbox to inbox
+    set theFolderName to "{savefolder}"
+    set theAccount to "{acct}"
 
-   imap = imaplib.IMAP4_SSL("imap.gmail.com")
-   imap.login(acct, password)
+    -- Check if the folder exists, if not, create it
+    try
+        set theFolder to mailbox theFolderName of account theAccount
+    on error
+        set theFolder to make new mailbox with properties {name:theFolderName} at account theAccount
+    end try
 
-   # create savefolder if necessary
-   status, folders = imap.list()
-   if status == 'OK':
-      folder_exists = any(f'"{savefolder}"' in folder.decode() for folder in folders)
-   
-      if not folder_exists:
-         # Folder doesn't exist, so create it
-         print(f"Creating folder: {savefolder}")
-         imap.create(savefolder)
+    set output to ""
+    set theMessages to messages of theInbox
+    repeat with aMessage in theMessages
+        if sender of aMessage is theSender and subject of aMessage contains theSubject then
+            -- Append the content of the message to the output
+            set output to output & "From: " & theSender & return & "Subject: " & subject of aMessage & return & content of aMessage & "\n\n"
+            -- Move the message to the specified folder
+            move aMessage to theFolder
+        end if
+    end repeat
 
-   imap.select("inbox")
-   status, messages = imap.search(None, f'(FROM "{addr}" SUBJECT "{subj}")')
-   messages = messages[0].split() # convert result to list of email IDs
-
-   reply=''
-   for mail in messages:
-      _, msg = imap.fetch(mail, "(RFC822)")
-      for response in msg:
-         if isinstance(response, tuple):
-            msg = email.message_from_bytes(response[1]) # parse raw content
-            subject = decode_header(msg["Subject"])[0][0]
-            if isinstance(subject, bytes): subject = subject.decode()
-            reply+=f'From: {addr}\nSubject: {subj}\n'
-
-            # extract and print body
-            if msg.is_multipart():
-               for part in msg.walk():
-                  if part.get_content_type() == "text/plain":
-                     body = part.get_payload(decode=True).decode()
-                     reply+=f'Body:\n{body}\n'
-            else:
-               body = msg.get_payload(decode=True).decode()
-               reply+=f'Body:\n{body}\n'
-
-            # move to save folder (label)
-            imap.store(mail, '+X-GM-LABELS', savefolder)
-            imap.store(mail, '+FLAGS', '\\Deleted')
-            imap.expunge()
-
-   imap.close()
-   imap.logout()
-   print(reply)
-   return reply
+    return output
+end tell
+'''
+    return applescript
 
 def check(log,savefolder):
    (tree,root)=readlogdata(log)
@@ -223,8 +209,13 @@ def check(log,savefolder):
       if msg.attrib['reply']=='':
          addr=msg.attrib['address']
          subj=msg.attrib['subject']
-         reply=gmail_getreply(addr,subj,savefolder)
-         if reply!='':
+         reply=run_applescript_str(applescript_getreply(addr,subj,savefolder))
+         reply1=''
+         for line in reply.splitlines():
+            if line.startswith('Error processing'): print(line)
+            else: reply1+=line+'\n'
+         if reply1!='':
+            print('Reply:'); print(reply) # complete with error messages
             msg.set('reply',logtime())
             change=True
    if change: tree.write(log)
@@ -238,34 +229,48 @@ def remind(template,log):
          vars=copy.deepcopy(logitem.attrib)
          vars['subject']='Re: '+vars['subject']
          msg=subwords(template,vars)
-         if debug: print(msg)
-         elif send_gmail(msg):
-            remind=''
-            if 'remind' in logitem.attrib: remind=logitem.attrib['remind']+','
-            remind+=logtime()
-            logitem.set('remind',remind)
-            change=True
+         if debug: print('Message:\n',msg)
+         run_applescript_str(applescript_email(msg))
+         remind=''
+         if 'remind' in logitem.attrib: remind=logitem.attrib['remind']+','
+         remind+=logtime()
+         logitem.set('remind',remind)
+         change=True
    if change: tree.write(log)
+
+def run_applescript_file(script_path):
+   try: subprocess.run(['osascript', script_path], check=True)
+   except subprocess.CalledProcessError as e: print(f"AppleScript Error: {e}")
+
+def run_applescript_str(script):
+   global debug
+   if debug:
+      print('script:\n',script)
+      return ''
+   process = subprocess.Popen(['osascript', '-'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+   stdout, stderr = process.communicate(script)
+   #print('osascript output:\n',stdout)
+   if process.returncode == 0: return stdout.strip()
+   else: raise Exception(f"AppleScript Error: {stderr}")
 
 if __name__=='__main__':
    template=''
    addressees=[]
    log='log.xml'
+   acct=''
    mailfolder='automail'
-   user=acct=passvar=password=''
-   debug=False
+   html=debug=False
    args=iter(sys.argv[1:])
    for arg in args:
       if arg=='-template' or arg=='-t': template+=readfile(next(args)) # appends
+      elif arg=='-html' or arg=='-h': html=True
       elif arg=='-addressees' or arg=='-a': addressees+=parse_xml(next(args))
       elif arg=='-log' or arg=='-l': log=next(args)
-      elif arg=='-username' or arg=='-u': user=next(args)
-      elif arg=='-account': acct=next(args)
-      elif arg=='-password' or arg=='-p': password=next(args)
-      elif arg=='-passvar': password=os.environ.get(next(args))
+      elif arg=='-account': acct=next(args) 
       elif arg=='-send' or arg=='-s': send(template,addressees,log)
       elif arg=='-folder' or arg=='-f': mailfolder=next(args)
       elif arg=='-check' or arg=='-c': check(log,mailfolder)
       elif arg=='-remind' or arg=='-r': remind(template,log)
+      elif arg=='-script': run_applescript_file(next(args))
       elif arg=='-debug' or arg=='-d': debug=True
       else: raise ValueError(f'Argument {arg} not recognized!')

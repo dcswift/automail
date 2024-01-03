@@ -1,8 +1,9 @@
 # Email automation tools
 e.g. for coordinating related messages to/from multiple people
 
-Versions for gmail and MS Outlook on Mac, 
+Versions for GMail, MS Outlook on Mac, and Mac Mail (not tested), 
 and a tool to create a list of emails to coordinate.
+Incomplete Visual Basic version for Outlook.
 
 ## Usage
 Lists are supplied as XML files, with data read from element attributes.
@@ -32,3 +33,19 @@ outlookmac.py -t template1r.txt [-debug] -remind
 
 ## Installation
 To install: git clone --depth 1 https://github.com/dcswift/automail.git
+
+## Status / development plan
+In active but not intense development, driven by selfish needs.
+
+Possible future developments:
+- Review each reply and mark as done, partial (maybe), or not substantive (e.g. "Ok will do").
+- Test/improve Mac Mail version.
+- Develop rest of Outlook version for Windows.
+- Develop general SMTP/IMAP version.
+- GMail version using OAuth API.
+- GUIs instead of shell frontend.
+
+Suggestions for further development are welcome.
+
+## Contributions
+Contributions are welcome, preferably in consistent style.
