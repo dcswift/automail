@@ -221,12 +221,16 @@ def check(log,savefolder,all=False):
    (tree,root)=readlogdata(log)
    change=False
    for msg in root:
-      if all or msg.attrib['reply']=='':
+      msgreply=msg.get('reply')
+      if all or msgreply=='':
          addr=msg.attrib['address']
          subj=msg.attrib['subject']
          reply=gmail_getreply(addr,subj,savefolder)
          if reply!='':
-            msg.set('reply',logtime())
+            print('Reply:'); print(reply)
+            if msgreply!='': msgreply+=','
+            msgreply+=logtime()
+            msg.set('reply',msgreply)
             change=True
    if change: tree.write(log)
 

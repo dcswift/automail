@@ -207,7 +207,8 @@ def check(log,savefolder,all=False):
    (tree,root)=readlogdata(log)
    change=False
    for msg in root:
-      if all or msg.attrib['reply']=='':
+      msgreply=msg.get('reply')
+      if all or msgreply=='':
          addr=msg.attrib['address']
          subj=msg.attrib['subject']
          reply=run_applescript_str(applescript_getreply(addr,subj,savefolder))
@@ -217,7 +218,9 @@ def check(log,savefolder,all=False):
             else: reply1+=line+'\n'
          if reply1!='':
             print('Reply:'); print(reply) # complete with error messages
-            msg.set('reply',logtime())
+            if msgreply!='': msgreply+=','
+            msgreply+=logtime()
+            msg.set('reply',msgreply)
             change=True
    if change: tree.write(log)
 
