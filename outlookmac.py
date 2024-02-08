@@ -38,6 +38,9 @@ Arguments:
    -recheck (checks even if a reply has already been received)
    -remind/-r
    -debug/-d (Prints send or remind messages but doesn't send. Specify *before* -send/-remind argument.)
+
+If generating HTML mails, the replies are usually HTML by default.
+When checking replies, the output can be piped through the html2text.py script to remove the HTML formatting code.
 '''
 
 import sys,re,subprocess,time,datetime,copy
